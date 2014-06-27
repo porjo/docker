@@ -15,6 +15,7 @@ type Action string
 const (
 	Add    Action = "-A"
 	Delete Action = "-D"
+	Insert Action = "-I"
 )
 
 var (
@@ -67,7 +68,8 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		// value" by both iptables and ip6tables.
 		daddr = "0/0"
 	}
-	if output, err := Raw("-t", "nat", fmt.Sprint(action), c.Name,
+
+	if output, err := Raw("-t", "nat", string(action), c.Name,
 		"-p", proto,
 		"-d", daddr,
 		"--dport", strconv.Itoa(port),
@@ -79,60 +81,37 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		return fmt.Errorf("Error iptables forward: %s", output)
 	}
 
-	fAction := action
-	if fAction == Add {
-		fAction = "-I"
-	}
-
-	// Handle custom chain (--forward-chain)
-	if forwardChain != "" && fAction != Delete {
-		// Does chain exist?
-		_, err := Raw("-n", "-L", forwardChain)
-		if err != nil {
-			// Add chain
-			output, err := Raw("-N", forwardChain)
-			if err != nil {
-				//return err
-				return fmt.Errorf("add chain %s, %s", forwardChain, err)
-			} else if len(output) != 0 {
-				return fmt.Errorf("Error iptables forward: %s", output)
-			}
-		}
-
-		// Does link to chain from FORWARD's root chain exist?
-		output, err := Raw("-C", "FORWARD", "-j", forwardChain)
-		if err != nil {
-			// Add link to chain
-			if output2, err := Raw(string(fAction), "FORWARD",
-				"-j", forwardChain); err != nil {
-				//return err
-				return fmt.Errorf("add link to chain %s, %s", forwardChain, err)
-			} else if len(output2) != 0 {
-				return fmt.Errorf("Error iptables forward: %s", output2)
-			}
-		} else if len(output) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output)
-		}
-
-		// Append to custom chain
-		fAction = "-A"
-	}
-
 	if forwardChain == "" {
 		forwardChain = "FORWARD"
+		if action == Add {
+			action = Insert
+		}
+	} else {
+		if err := createForwardChain(forwardChain); err != nil {
+			return err
+		}
+		if action != Delete {
+			// Append to custom chain
+			action = Add
+		}
 	}
 
-	if output, err := Raw(string(fAction), forwardChain,
+	if output, err := Raw(string(action), forwardChain,
 		"!", "-i", c.Bridge,
 		"-o", c.Bridge,
 		"-p", proto,
 		"-d", dest_addr,
 		"--dport", strconv.Itoa(dest_port),
 		"-j", "ACCEPT"); err != nil {
-		//return err
-		return fmt.Errorf("rule add %s, %s", forwardChain, err)
+		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Error iptables forward: %s", output)
+	}
+
+	if action == Delete {
+		if err := removeForwardChain(forwardChain); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -212,4 +191,59 @@ func Raw(args ...string) ([]byte, error) {
 	}
 
 	return output, err
+}
+
+func createForwardChain(forwardChain string) error {
+	if forwardChain == "FORWARD" {
+		return nil
+	}
+
+	// Does chain exist?
+	if _, err := Raw("-n", "-L", forwardChain); err != nil {
+		// Add chain
+		output, err := Raw("-N", forwardChain)
+		if err != nil {
+			return err
+		} else if len(output) != 0 {
+			return fmt.Errorf("Error iptables forward: %s", output)
+		}
+	}
+
+	// Does linking rule exist?
+	if !Exists("FORWARD", "-j", forwardChain) {
+		// Add linking rule
+		if output2, err := Raw(string(Insert), "FORWARD", "-j", forwardChain); err != nil {
+			return err
+		} else if len(output2) != 0 {
+			return fmt.Errorf("Error iptables forward: %s", output2)
+		}
+	}
+
+	return nil
+}
+
+func removeForwardChain(forwardChain string) error {
+	if forwardChain == "FORWARD" {
+		return nil
+	}
+
+	// Chain removal can't happen with linking rule in place
+	// First remove linking rule
+	if output, err := Raw(string(Delete), "FORWARD", "-j", forwardChain); err != nil {
+		return err
+	} else if len(output) != 0 {
+		return fmt.Errorf("Error iptables forward: %s", output)
+	}
+
+	// Remove chain (-X only succeeds if chain is empty)
+	if _, err := Raw("-X", forwardChain); err != nil {
+		// Re-insert linking rule if chain removal failed (chain isn't empty)
+		if output, err := Raw(string(Insert), "FORWARD", "-j", forwardChain); err != nil {
+			return err
+		} else if len(output) != 0 {
+			return fmt.Errorf("Error iptables forward: %s", output)
+		}
+	}
+
+	return nil
 }
