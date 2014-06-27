@@ -38,6 +38,7 @@ type HostConfig struct {
 	VolumesFrom     []string
 	Devices         []DeviceMapping
 	NetworkMode     NetworkMode
+	ForwardChain    string
 }
 
 func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {

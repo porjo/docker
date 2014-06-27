@@ -355,6 +355,10 @@ func Release(job *engine.Job) engine.Status {
 	var (
 		id                 = job.Args[0]
 		containerInterface = currentInterfaces.Get(id)
+		ip                 net.IP
+		port               int
+		proto              string
+		forwardChain       = job.Getenv("ForwardChain")
 	)
 
 	if containerInterface == nil {
@@ -362,7 +366,7 @@ func Release(job *engine.Job) engine.Status {
 	}
 
 	for _, nat := range containerInterface.PortMappings {
-		if err := portmapper.Unmap(nat); err != nil {
+		if err := portmapper.Unmap(nat, forwardChain); err != nil {
 			log.Printf("Unable to unmap port %s: %s", nat, err)
 		}
 	}
@@ -384,8 +388,11 @@ func AllocatePort(job *engine.Job) engine.Status {
 		hostPort      = job.GetenvInt("HostPort")
 		containerPort = job.GetenvInt("ContainerPort")
 		proto         = job.Getenv("Proto")
+		forwardChain  = job.Getenv("ForwardChain")
 		network       = currentInterfaces.Get(id)
 	)
+
+	return job.Error(fmt.Errorf("[debug] forwardChain %s\n", forwardChain))
 
 	if hostIP != "" {
 		ip = net.ParseIP(hostIP)
@@ -411,7 +418,7 @@ func AllocatePort(job *engine.Job) engine.Status {
 
 	var host net.Addr
 	for i := 0; i < MaxAllocatedPortAttempts; i++ {
-		if host, err = portmapper.Map(container, ip, hostPort); err == nil {
+		if host, err = portmapper.Map(container, ip, hostPort, forwardChain); err == nil {
 			break
 		}
 
@@ -429,7 +436,6 @@ func AllocatePort(job *engine.Job) engine.Status {
 		default:
 			// some other error during mapping
 			job.Logf("Received an unexpected error during port allocation: %s", err.Error())
-			break
 		}
 	}
 

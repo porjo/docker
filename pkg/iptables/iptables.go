@@ -59,7 +59,7 @@ func RemoveExistingChain(name string) error {
 	return chain.Remove()
 }
 
-func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr string, dest_port int) error {
+func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr string, dest_port int, forwardChain string) error {
 	daddr := ip.String()
 	if ip.IsUnspecified() {
 		// iptables interprets "0.0.0.0" as "0.0.0.0/32", whereas we
@@ -83,14 +83,52 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 	if fAction == Add {
 		fAction = "-I"
 	}
-	if output, err := Raw(string(fAction), "FORWARD",
+
+	// Handle custom chain (--forward-chain)
+	if forwardChain != "" && fAction == Add {
+		// Does chain exist?
+		_, err := Raw("-n", "-L", forwardChain)
+		if err != nil {
+			// Add chain
+			output, err := Raw("-N", forwardChain)
+			if err != nil {
+				//return err
+				return fmt.Errorf("add chain %s, %s", forwardChain, err)
+			} else if len(output) != 0 {
+				return fmt.Errorf("Error iptables forward: %s", output)
+			}
+		}
+
+		// Does link to chain from FORWARD's root chain exist?
+		output, err := Raw("-C", "FORWARD", "-j", forwardChain)
+		if err != nil {
+			// Add link to chain
+			if output2, err := Raw(string(fAction), "FORWARD",
+				"-j", forwardChain); err != nil {
+				//return err
+				return fmt.Errorf("add link to chain %s, %s", forwardChain, err)
+			} else if len(output2) != 0 {
+				return fmt.Errorf("Error iptables forward: %s", output2)
+			}
+		} else if len(output) != 0 {
+			return fmt.Errorf("Error iptables forward: %s", output)
+		}
+
+		// Append to custom chain
+		fAction = "-A"
+	} else {
+		forwardChain = "FORWARD"
+	}
+
+	if output, err := Raw(string(fAction), forwardChain,
 		"!", "-i", c.Bridge,
 		"-o", c.Bridge,
 		"-p", proto,
 		"-d", dest_addr,
 		"--dport", strconv.Itoa(dest_port),
 		"-j", "ACCEPT"); err != nil {
-		return err
+		//return err
+		return fmt.Errorf("rule add %s, %s", forwardChain, err)
 	} else if len(output) != 0 {
 		return fmt.Errorf("Error iptables forward: %s", output)
 	}
