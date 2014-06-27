@@ -1120,6 +1120,7 @@ func (container *Container) allocatePort(eng *engine.Engine, port nat.Port, bind
 		job.Setenv("HostPort", b.HostPort)
 		job.Setenv("Proto", port.Proto())
 		job.Setenv("ContainerPort", port.Port())
+		job.Setenv("ForwardChain", container.hostConfig.ForwardChain)
 
 		portEnv, err := job.Stdout.AddEnv()
 		if err != nil {

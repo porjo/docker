@@ -35,7 +35,7 @@ func SetIptablesChain(c *iptables.Chain) {
 	chain = c
 }
 
-func Map(container net.Addr, hostIP net.IP, hostPort int) error {
+func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -63,14 +63,14 @@ func Map(container net.Addr, hostIP net.IP, hostPort int) error {
 	}
 
 	containerIP, containerPort := getIPAndPort(m.container)
-	if err := forward(iptables.Add, m.proto, hostIP, hostPort, containerIP.String(), containerPort); err != nil {
+	if err := forward(iptables.Add, m.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain); err != nil {
 		return err
 	}
 
 	p, err := newProxy(m.host, m.container)
 	if err != nil {
 		// need to undo the iptables rules before we reutrn
-		forward(iptables.Delete, m.proto, hostIP, hostPort, containerIP.String(), containerPort)
+		forward(iptables.Delete, m.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain)
 		return err
 	}
 
@@ -82,7 +82,7 @@ func Map(container net.Addr, hostIP net.IP, hostPort int) error {
 	return nil
 }
 
-func Unmap(host net.Addr) error {
+func Unmap(host net.Addr, forwardChain string) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -97,7 +97,7 @@ func Unmap(host net.Addr) error {
 
 	containerIP, containerPort := getIPAndPort(data.container)
 	hostIP, hostPort := getIPAndPort(data.host)
-	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort); err != nil {
+	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain); err != nil {
 		return err
 	}
 	return nil
@@ -123,9 +123,9 @@ func getIPAndPort(a net.Addr) (net.IP, int) {
 	return nil, 0
 }
 
-func forward(action iptables.Action, proto string, sourceIP net.IP, sourcePort int, containerIP string, containerPort int) error {
+func forward(action iptables.Action, proto string, sourceIP net.IP, sourcePort int, containerIP string, containerPort int, forwardChain string) error {
 	if chain == nil {
 		return nil
 	}
-	return chain.Forward(action, sourceIP, sourcePort, proto, containerIP, containerPort)
+	return chain.Forward(action, sourceIP, sourcePort, proto, containerIP, containerPort, forwardChain)
 }
