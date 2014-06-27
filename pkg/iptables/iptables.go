@@ -85,7 +85,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 	}
 
 	// Handle custom chain (--forward-chain)
-	if forwardChain != "" && fAction == Add {
+	if forwardChain != "" && fAction != Delete {
 		// Does chain exist?
 		_, err := Raw("-n", "-L", forwardChain)
 		if err != nil {
@@ -116,7 +116,9 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 
 		// Append to custom chain
 		fAction = "-A"
-	} else {
+	}
+
+	if forwardChain == "" {
 		forwardChain = "FORWARD"
 	}
 

@@ -358,7 +358,6 @@ func Release(job *engine.Job) engine.Status {
 		ip                 net.IP
 		port               int
 		proto              string
-		forwardChain       = job.Getenv("ForwardChain")
 	)
 
 	if containerInterface == nil {
@@ -366,7 +365,7 @@ func Release(job *engine.Job) engine.Status {
 	}
 
 	for _, nat := range containerInterface.PortMappings {
-		if err := portmapper.Unmap(nat, forwardChain); err != nil {
+		if err := portmapper.Unmap(nat); err != nil {
 			log.Printf("Unable to unmap port %s: %s", nat, err)
 		}
 	}
@@ -391,8 +390,6 @@ func AllocatePort(job *engine.Job) engine.Status {
 		forwardChain  = job.Getenv("ForwardChain")
 		network       = currentInterfaces.Get(id)
 	)
-
-	return job.Error(fmt.Errorf("[debug] forwardChain %s\n", forwardChain))
 
 	if hostIP != "" {
 		ip = net.ParseIP(hostIP)

@@ -13,7 +13,10 @@ type Env []string
 
 func (env *Env) Get(key string) (value string) {
 	// FIXME: use Map()
+
+	envStr := ""
 	for _, kv := range *env {
+		envStr += "," + kv
 		if strings.Index(kv, "=") == -1 {
 			continue
 		}

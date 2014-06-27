@@ -16,6 +16,7 @@ type mapping struct {
 	userlandProxy proxy.Proxy
 	host          net.Addr
 	container     net.Addr
+	forwardChain  string
 }
 
 var (
@@ -62,9 +63,10 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 			return nil, err
 		}
 		m = &mapping{
-			proto:     proto,
-			host:      &net.TCPAddr{IP: hostIP, Port: allocatedHostPort},
-			container: container,
+			proto:        proto,
+			host:         &net.TCPAddr{IP: hostIP, Port: allocatedHostPort},
+			container:    container,
+			forwardChain: forwardChain,
 		}
 	case *net.UDPAddr:
 		proto = "udp"
@@ -72,9 +74,10 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 			return nil, err
 		}
 		m = &mapping{
-			proto:     proto,
-			host:      &net.UDPAddr{IP: hostIP, Port: allocatedHostPort},
-			container: container,
+			proto:        proto,
+			host:         &net.UDPAddr{IP: hostIP, Port: allocatedHostPort},
+			container:    container,
+			forwardChain: forwardChain,
 		}
 	default:
 		err = ErrUnknownBackendAddressType
@@ -107,7 +110,7 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 	return m.host, nil
 }
 
-func Unmap(host net.Addr, forwardChain string) error {
+func Unmap(host net.Addr) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -122,7 +125,7 @@ func Unmap(host net.Addr, forwardChain string) error {
 
 	containerIP, containerPort := getIPAndPort(data.container)
 	hostIP, hostPort := getIPAndPort(data.host)
-	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain); err != nil {
+	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort, data.forwardChain); err != nil {
 		return err
 	}
 
