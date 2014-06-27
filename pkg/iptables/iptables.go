@@ -87,7 +87,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 			action = Insert
 		}
 	} else {
-		if err := createForwardChain(forwardChain); err != nil {
+		if err := c.createForwardChain(forwardChain); err != nil {
 			return err
 		}
 		if action != Delete {
@@ -109,7 +109,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 	}
 
 	if action == Delete {
-		if err := removeForwardChain(forwardChain); err != nil {
+		if err := c.removeForwardChain(forwardChain); err != nil {
 			return err
 		}
 	}
@@ -193,7 +193,7 @@ func Raw(args ...string) ([]byte, error) {
 	return output, err
 }
 
-func createForwardChain(forwardChain string) error {
+func (c *Chain) createForwardChain(forwardChain string) error {
 	if forwardChain == "FORWARD" {
 		return nil
 	}
@@ -212,7 +212,10 @@ func createForwardChain(forwardChain string) error {
 	// Does linking rule exist?
 	if !Exists("FORWARD", "-j", forwardChain) {
 		// Add linking rule
-		if output2, err := Raw(string(Insert), "FORWARD", "-j", forwardChain); err != nil {
+		if output2, err := Raw(string(Insert), "FORWARD",
+			"!", "-i", c.Bridge,
+			"-o", c.Bridge,
+			"-j", forwardChain); err != nil {
 			return err
 		} else if len(output2) != 0 {
 			return fmt.Errorf("Error iptables forward: %s", output2)
@@ -222,14 +225,17 @@ func createForwardChain(forwardChain string) error {
 	return nil
 }
 
-func removeForwardChain(forwardChain string) error {
+func (c *Chain) removeForwardChain(forwardChain string) error {
 	if forwardChain == "FORWARD" {
 		return nil
 	}
 
 	// Chain removal can't happen with linking rule in place
 	// First remove linking rule
-	if output, err := Raw(string(Delete), "FORWARD", "-j", forwardChain); err != nil {
+	if output, err := Raw(string(Delete), "FORWARD",
+		"!", "-i", c.Bridge,
+		"-o", c.Bridge,
+		"-j", forwardChain); err != nil {
 		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Error iptables forward: %s", output)
@@ -238,7 +244,10 @@ func removeForwardChain(forwardChain string) error {
 	// Remove chain (-X only succeeds if chain is empty)
 	if _, err := Raw("-X", forwardChain); err != nil {
 		// Re-insert linking rule if chain removal failed (chain isn't empty)
-		if output, err := Raw(string(Insert), "FORWARD", "-j", forwardChain); err != nil {
+		if output, err := Raw(string(Insert), "FORWARD",
+			"!", "-i", c.Bridge,
+			"-o", c.Bridge,
+			"-j", forwardChain); err != nil {
 			return err
 		} else if len(output) != 0 {
 			return fmt.Errorf("Error iptables forward: %s", output)
