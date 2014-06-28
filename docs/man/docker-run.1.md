@@ -17,7 +17,7 @@ docker-run - Run a process in an isolated container
 [**--rm**[=*false*]] [**--privileged**[=*false*]]
 [**-i**|**--interactive**[=*false*]]
 [**-t**|**--tty**[=*false*]] [**--lxc-conf**=*options*]
-[**-n**|**--networking**[=*true*]]
+[**-n**|**--networking**[=*true*]] [**--forward-chain**=*chain-name*]
 [**-v**|**--volume**=*volume*] [**--volumes-from**=*container-id*]
 [**-w**|**--workdir**=*directory*] [**--sig-proxy**[=*true*]]
 IMAGE [COMMAND] [ARG...]
@@ -118,6 +118,11 @@ exposed ports, use **docker port**.
    Publish a container's port to the host (format: ip:hostPort:containerPort |
 ip::containerPort | hostPort:containerPort) (use **docker port** to see the
 actual mapping)
+
+**--forward-chain**=*chain-name*
+   Sets the Netfilter chain name that forwarding rules will be appended to.
+If the chain does not exist, it will be created. The default behaviour is to
+insert rules into the FORWARD chain.
 
 
 **-h**, **-hostname**=*hostname*
@@ -307,6 +312,10 @@ flag. For example a httpd port 80 can be mapped to the host port 8080 using the
 following:
 
     # docker run -p 8080:80 -d -i -t fedora/httpd
+
+When enabled, Netfilter firewall is updated automatically with rules corresponding to the
+specified ports. The **--forward-chain** flag can be used to control where the
+forwarding rules are added.
 
 ## Creating and Mounting a Data Volume Container
 
