@@ -44,19 +44,21 @@ func TestMapPorts(t *testing.T) {
 	srcAddr1 := &net.TCPAddr{Port: 1080, IP: net.ParseIP("172.16.0.1")}
 	srcAddr2 := &net.TCPAddr{Port: 1080, IP: net.ParseIP("172.16.0.2")}
 
-	if err := Map(srcAddr1, dstIp1, 80); err != nil {
+	forwardChain := ""
+
+	if err := Map(srcAddr1, dstIp1, 80, forwardChain); err != nil {
 		t.Fatalf("Failed to allocate port: %s", err)
 	}
 
-	if Map(srcAddr1, dstIp1, 80) == nil {
+	if Map(srcAddr1, dstIp1, 80, forwardChain) == nil {
 		t.Fatalf("Port is in use - mapping should have failed")
 	}
 
-	if Map(srcAddr2, dstIp1, 80) == nil {
+	if Map(srcAddr2, dstIp1, 80, forwardChain) == nil {
 		t.Fatalf("Port is in use - mapping should have failed")
 	}
 
-	if err := Map(srcAddr2, dstIp2, 80); err != nil {
+	if err := Map(srcAddr2, dstIp2, 80, forwardChain); err != nil {
 		t.Fatalf("Failed to allocate port: %s", err)
 	}
 
