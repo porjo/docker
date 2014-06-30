@@ -69,24 +69,6 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		daddr = "0/0"
 	}
 
-	if forwardChain == "" {
-		forwardChain = "FORWARD"
-		if action == Append {
-			action = Insert
-		}
-	} else {
-		// Does chain exist?
-		if output, err := Raw("-n", "-L", forwardChain); err != nil {
-			return err
-		} else if len(output) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output)
-		}
-		if action != Delete {
-			// Append to custom chain
-			action = Append
-		}
-	}
-
 	if output, err := Raw("-t", "nat", string(action), c.Name,
 		"-p", proto,
 		"-d", daddr,
@@ -97,6 +79,18 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Error iptables forward: %s", output)
+	}
+
+	if forwardChain == "" {
+		forwardChain = "FORWARD"
+		if action == Append {
+			action = Insert
+		}
+	} else {
+		if action != Delete {
+			// Append to custom chain
+			action = Append
+		}
 	}
 
 	if output, err := Raw(string(action), forwardChain,
@@ -158,6 +152,13 @@ func (c *Chain) Remove() error {
 // Check if an existing rule exists
 func Exists(args ...string) bool {
 	if _, err := Raw(append([]string{"-C"}, args...)...); err != nil {
+		return false
+	}
+	return true
+}
+
+func ChainExists(chain string) bool {
+	if _, err := Raw("-n", "-L", chain); err != nil {
 		return false
 	}
 	return true

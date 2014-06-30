@@ -56,6 +56,12 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 		}
 	}()
 
+	if forwardChain != "" {
+		if !iptables.ChainExists(forwardChain) {
+			return fmt.Errorf("Forward chain '%s' does not exist", forwardChain)
+		}
+	}
+
 	switch container.(type) {
 	case *net.TCPAddr:
 		proto = "tcp"

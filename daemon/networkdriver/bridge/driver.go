@@ -434,6 +434,14 @@ func AllocatePort(job *engine.Job) engine.Status {
 			// some other error during mapping
 			job.Logf("Received an unexpected error during port allocation: %s", err.Error())
 		}
+
+		if err != nil && origHostPort > 0 {
+			errRelease := portallocator.ReleasePort(ip, proto, origHostPort)
+			if errRelease != nil {
+				return job.Error(errRelease)
+			}
+			return job.Error(err)
+		}
 	}
 
 	if err != nil {
