@@ -40,6 +40,12 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) e
 	lock.Lock()
 	defer lock.Unlock()
 
+	if forwardChain != "" {
+		if !iptables.ChainExists(forwardChain) {
+			return fmt.Errorf("Forward chain '%s' does not exist", forwardChain)
+		}
+	}
+
 	var m *mapping
 	switch container.(type) {
 	case *net.TCPAddr:

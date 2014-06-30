@@ -442,6 +442,14 @@ func AllocatePort(job *engine.Job) engine.Status {
 			break
 		}
 
+		if err != nil && origHostPort > 0 {
+			errRelease := portallocator.ReleasePort(ip, proto, origHostPort)
+			if errRelease != nil {
+				return job.Error(errRelease)
+			}
+			return job.Error(err)
+		}
+
 		job.Logf("Failed to bind %s:%d for container address %s:%d. Trying another port.", ip.String(), hostPort, network.IP.String(), containerPort)
 	}
 
