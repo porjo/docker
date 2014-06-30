@@ -13,7 +13,7 @@ import (
 type Action string
 
 const (
-	Add    Action = "-A"
+	Append Action = "-A"
 	Delete Action = "-D"
 	Insert Action = "-I"
 )
@@ -44,10 +44,10 @@ func NewChain(name, bridge string) (*Chain, error) {
 		Bridge: bridge,
 	}
 
-	if err := chain.Prerouting(Add, "-m", "addrtype", "--dst-type", "LOCAL"); err != nil {
+	if err := chain.Prerouting(Append, "-m", "addrtype", "--dst-type", "LOCAL"); err != nil {
 		return nil, fmt.Errorf("Failed to inject docker in PREROUTING chain: %s", err)
 	}
-	if err := chain.Output(Add, "-m", "addrtype", "--dst-type", "LOCAL", "!", "--dst", "127.0.0.0/8"); err != nil {
+	if err := chain.Output(Append, "-m", "addrtype", "--dst-type", "LOCAL", "!", "--dst", "127.0.0.0/8"); err != nil {
 		return nil, fmt.Errorf("Failed to inject docker in OUTPUT chain: %s", err)
 	}
 	return chain, nil
@@ -69,6 +69,24 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		daddr = "0/0"
 	}
 
+	if forwardChain == "" {
+		forwardChain = "FORWARD"
+		if action == Append {
+			action = Insert
+		}
+	} else {
+		// Does chain exist?
+		if output, err := Raw("-n", "-L", forwardChain); err != nil {
+			return err
+		} else if len(output) != 0 {
+			return fmt.Errorf("Error iptables forward: %s", output)
+		}
+		if action != Delete {
+			// Append to custom chain
+			action = Append
+		}
+	}
+
 	if output, err := Raw("-t", "nat", string(action), c.Name,
 		"-p", proto,
 		"-d", daddr,
@@ -81,21 +99,6 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		return fmt.Errorf("Error iptables forward: %s", output)
 	}
 
-	if forwardChain == "" {
-		forwardChain = "FORWARD"
-		if action == Add {
-			action = Insert
-		}
-	} else {
-		if err := c.createForwardChain(forwardChain); err != nil {
-			return err
-		}
-		if action != Delete {
-			// Append to custom chain
-			action = Add
-		}
-	}
-
 	if output, err := Raw(string(action), forwardChain,
 		"!", "-i", c.Bridge,
 		"-o", c.Bridge,
@@ -106,12 +109,6 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		return err
 	} else if len(output) != 0 {
 		return fmt.Errorf("Error iptables forward: %s", output)
-	}
-
-	if action == Delete {
-		if err := c.removeForwardChain(forwardChain); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -191,68 +188,4 @@ func Raw(args ...string) ([]byte, error) {
 	}
 
 	return output, err
-}
-
-func (c *Chain) createForwardChain(forwardChain string) error {
-	if forwardChain == "FORWARD" {
-		return nil
-	}
-
-	// Does chain exist?
-	if _, err := Raw("-n", "-L", forwardChain); err != nil {
-		// Add chain
-		output, err := Raw("-N", forwardChain)
-		if err != nil {
-			return err
-		} else if len(output) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output)
-		}
-	}
-
-	// Does linking rule exist?
-	if !Exists("FORWARD", "-j", forwardChain) {
-		// Add linking rule
-		if output2, err := Raw(string(Insert), "FORWARD",
-			"!", "-i", c.Bridge,
-			"-o", c.Bridge,
-			"-j", forwardChain); err != nil {
-			return err
-		} else if len(output2) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output2)
-		}
-	}
-
-	return nil
-}
-
-func (c *Chain) removeForwardChain(forwardChain string) error {
-	if forwardChain == "FORWARD" {
-		return nil
-	}
-
-	// Chain removal can't happen with linking rule in place
-	// First remove linking rule
-	if output, err := Raw(string(Delete), "FORWARD",
-		"!", "-i", c.Bridge,
-		"-o", c.Bridge,
-		"-j", forwardChain); err != nil {
-		return err
-	} else if len(output) != 0 {
-		return fmt.Errorf("Error iptables forward: %s", output)
-	}
-
-	// Remove chain (-X only succeeds if chain is empty)
-	if _, err := Raw("-X", forwardChain); err != nil {
-		// Re-insert linking rule if chain removal failed (chain isn't empty)
-		if output, err := Raw(string(Insert), "FORWARD",
-			"!", "-i", c.Bridge,
-			"-o", c.Bridge,
-			"-j", forwardChain); err != nil {
-			return err
-		} else if len(output) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output)
-		}
-	}
-
-	return nil
 }
