@@ -63,7 +63,6 @@ func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Conf
 		flHostname        = cmd.String([]string{"h", "-hostname"}, "", "Container host name")
 		flMemoryString    = cmd.String([]string{"m", "-memory"}, "", "Memory limit (format: <number><optional unit>, where unit = b, k, m or g)")
 		flUser            = cmd.String([]string{"u", "-user"}, "", "Username or UID")
-		flForwardChain    = cmd.String([]string{"-forward-chain"}, "", "name of netfilter chain to use in FORWARD table")
 		flWorkingDir      = cmd.String([]string{"w", "-workdir"}, "", "Working directory inside the container")
 		flCpuShares       = cmd.Int64([]string{"c", "-cpu-shares"}, 0, "CPU shares (relative weight)")
 		flCpuset          = cmd.String([]string{"-cpuset"}, "", "CPUs in which to allow execution (0-3, 0,1)")

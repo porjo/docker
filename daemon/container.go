@@ -437,9 +437,8 @@ func (container *Container) allocateNetwork() error {
 	}
 
 	var (
-		portSpecs    = make(nat.PortSet)
-		bindings     = make(nat.PortMap)
-		forwardChain = container.hostConfig.ForwardChain
+		portSpecs = make(nat.PortSet)
+		bindings  = make(nat.PortMap)
 	)
 
 	if container.Config.ExposedPorts != nil {
@@ -452,7 +451,7 @@ func (container *Container) allocateNetwork() error {
 	container.NetworkSettings.PortMapping = nil
 
 	for port := range portSpecs {
-		if err := container.allocatePort(eng, port, bindings, forwardChain); err != nil {
+		if err := container.allocatePort(eng, port, bindings); err != nil {
 			return err
 		}
 	}
@@ -1129,7 +1128,7 @@ func (container *Container) waitForStart() error {
 	return nil
 }
 
-func (container *Container) allocatePort(eng *engine.Engine, port nat.Port, bindings nat.PortMap, forwardChain string) error {
+func (container *Container) allocatePort(eng *engine.Engine, port nat.Port, bindings nat.PortMap) error {
 	binding := bindings[port]
 	if container.hostConfig.PublishAllPorts && len(binding) == 0 {
 		binding = append(binding, nat.PortBinding{})
@@ -1143,7 +1142,6 @@ func (container *Container) allocatePort(eng *engine.Engine, port nat.Port, bind
 		job.Setenv("HostPort", b.HostPort)
 		job.Setenv("Proto", port.Proto())
 		job.Setenv("ContainerPort", port.Port())
-		job.Setenv("ForwardChain", forwardChain)
 
 		portEnv, err := job.Stdout.AddEnv()
 		if err != nil {

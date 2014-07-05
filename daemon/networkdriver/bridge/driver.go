@@ -384,7 +384,6 @@ func AllocatePort(job *engine.Job) engine.Status {
 		hostPort      = job.GetenvInt("HostPort")
 		containerPort = job.GetenvInt("ContainerPort")
 		proto         = job.Getenv("Proto")
-		forwardChain  = job.Getenv("ForwardChain")
 		network       = currentInterfaces.Get(id)
 	)
 
@@ -412,7 +411,7 @@ func AllocatePort(job *engine.Job) engine.Status {
 
 	var host net.Addr
 	for i := 0; i < MaxAllocatedPortAttempts; i++ {
-		if host, err = portmapper.Map(container, ip, hostPort, forwardChain); err == nil {
+		if host, err = portmapper.Map(container, ip, hostPort); err == nil {
 			break
 		}
 
@@ -430,15 +429,6 @@ func AllocatePort(job *engine.Job) engine.Status {
 		default:
 			// some other error during mapping
 			job.Logf("Received an unexpected error during port allocation: %s", err.Error())
-			/*
-				if hostPort > 0 {
-					errRelease := portallocator.ReleasePort(ip, proto, hostPort)
-					if errRelease != nil {
-						return job.Error(errRelease)
-					}
-					return job.Error(err)
-				}
-			*/
 			break
 		}
 	}

@@ -38,7 +38,6 @@ type HostConfig struct {
 	VolumesFrom     []string
 	Devices         []DeviceMapping
 	NetworkMode     NetworkMode
-	ForwardChain    string
 }
 
 func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {
@@ -47,7 +46,6 @@ func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {
 		Privileged:      job.GetenvBool("Privileged"),
 		PublishAllPorts: job.GetenvBool("PublishAllPorts"),
 		NetworkMode:     NetworkMode(job.Getenv("NetworkMode")),
-		ForwardChain:    job.Getenv("ForwardChain"),
 	}
 	job.GetenvJson("LxcConf", &hostConfig.LxcConf)
 	job.GetenvJson("PortBindings", &hostConfig.PortBindings)

@@ -16,7 +16,6 @@ type mapping struct {
 	userlandProxy proxy.Proxy
 	host          net.Addr
 	container     net.Addr
-	forwardChain  string
 }
 
 var (
@@ -38,7 +37,7 @@ func SetIptablesChain(c *iptables.Chain) {
 	chain = c
 }
 
-func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (net.Addr, error) {
+func Map(container net.Addr, hostIP net.IP, hostPort int) (net.Addr, error) {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -56,12 +55,6 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 		}
 	}()
 
-	if forwardChain != "" {
-		if !iptables.ChainExists(forwardChain) {
-			return nil, fmt.Errorf("Forward chain '%s' does not exist", forwardChain)
-		}
-	}
-
 	switch container.(type) {
 	case *net.TCPAddr:
 		proto = "tcp"
@@ -69,10 +62,9 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 			return nil, err
 		}
 		m = &mapping{
-			proto:        proto,
-			host:         &net.TCPAddr{IP: hostIP, Port: allocatedHostPort},
-			container:    container,
-			forwardChain: forwardChain,
+			proto:     proto,
+			host:      &net.TCPAddr{IP: hostIP, Port: allocatedHostPort},
+			container: container,
 		}
 	case *net.UDPAddr:
 		proto = "udp"
@@ -80,10 +72,9 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 			return nil, err
 		}
 		m = &mapping{
-			proto:        proto,
-			host:         &net.UDPAddr{IP: hostIP, Port: allocatedHostPort},
-			container:    container,
-			forwardChain: forwardChain,
+			proto:     proto,
+			host:      &net.UDPAddr{IP: hostIP, Port: allocatedHostPort},
+			container: container,
 		}
 	default:
 		err = ErrUnknownBackendAddressType
@@ -97,14 +88,14 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 	}
 
 	containerIP, containerPort := getIPAndPort(m.container)
-	if err := forward(iptables.Append, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort, forwardChain); err != nil {
+	if err := forward(iptables.Append, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort); err != nil {
 		return nil, err
 	}
 
 	p, err := newProxy(m.host, m.container)
 	if err != nil {
 		// need to undo the iptables rules before we return
-		forward(iptables.Delete, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort, forwardChain)
+		forward(iptables.Delete, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort)
 		return nil, err
 	}
 
@@ -131,7 +122,7 @@ func Unmap(host net.Addr) error {
 
 	containerIP, containerPort := getIPAndPort(data.container)
 	hostIP, hostPort := getIPAndPort(data.host)
-	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort, data.forwardChain); err != nil {
+	if err := forward(iptables.Delete, data.proto, hostIP, hostPort, containerIP.String(), containerPort); err != nil {
 		return err
 	}
 
@@ -169,9 +160,9 @@ func getIPAndPort(a net.Addr) (net.IP, int) {
 	return nil, 0
 }
 
-func forward(action iptables.Action, proto string, sourceIP net.IP, sourcePort int, containerIP string, containerPort int, forwardChain string) error {
+func forward(action iptables.Action, proto string, sourceIP net.IP, sourcePort int, containerIP string, containerPort int) error {
 	if chain == nil {
 		return nil
 	}
-	return chain.Forward(action, sourceIP, sourcePort, proto, containerIP, containerPort, forwardChain)
+	return chain.Forward(action, sourceIP, sourcePort, proto, containerIP, containerPort)
 }
