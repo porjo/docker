@@ -58,7 +58,7 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 
 	if forwardChain != "" {
 		if !iptables.ChainExists(forwardChain) {
-			return fmt.Errorf("Forward chain '%s' does not exist", forwardChain)
+			return nil, fmt.Errorf("Forward chain '%s' does not exist", forwardChain)
 		}
 	}
 
@@ -97,15 +97,15 @@ func Map(container net.Addr, hostIP net.IP, hostPort int, forwardChain string) (
 	}
 
 	containerIP, containerPort := getIPAndPort(m.container)
-	if err := forward(iptables.Append, m.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain); err != nil {
-		return err
+	if err := forward(iptables.Append, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort, forwardChain); err != nil {
+		return nil, err
 	}
 
 	p, err := newProxy(m.host, m.container)
 	if err != nil {
 		// need to undo the iptables rules before we return
-		forward(iptables.Delete, m.proto, hostIP, hostPort, containerIP.String(), containerPort, forwardChain)
-		return err
+		forward(iptables.Delete, m.proto, hostIP, allocatedHostPort, containerIP.String(), containerPort, forwardChain)
+		return nil, err
 	}
 
 	m.userlandProxy = p

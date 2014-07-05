@@ -355,9 +355,6 @@ func Release(job *engine.Job) engine.Status {
 	var (
 		id                 = job.Args[0]
 		containerInterface = currentInterfaces.Get(id)
-		ip                 net.IP
-		port               int
-		proto              string
 	)
 
 	if containerInterface == nil {
@@ -433,14 +430,16 @@ func AllocatePort(job *engine.Job) engine.Status {
 		default:
 			// some other error during mapping
 			job.Logf("Received an unexpected error during port allocation: %s", err.Error())
-		}
-
-		if err != nil && origHostPort > 0 {
-			errRelease := portallocator.ReleasePort(ip, proto, origHostPort)
-			if errRelease != nil {
-				return job.Error(errRelease)
-			}
-			return job.Error(err)
+			/*
+				if hostPort > 0 {
+					errRelease := portallocator.ReleasePort(ip, proto, hostPort)
+					if errRelease != nil {
+						return job.Error(errRelease)
+					}
+					return job.Error(err)
+				}
+			*/
+			break
 		}
 	}
 
