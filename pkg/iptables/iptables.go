@@ -101,6 +101,39 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 	return nil
 }
 
+func (c *Chain) Link(action Action, ip1, ip2 net.IP, port int, proto string) error {
+	if action != Delete {
+		if err := c.createForwardChain(); err != nil {
+			return err
+		}
+	}
+	if output, err := Raw(string(action), c.Name,
+		"-i", c.Bridge, "-o", c.Bridge,
+		"-p", proto,
+		"-s", ip1.String(),
+		"--dport", strconv.Itoa(port),
+		"-d", ip2.String(),
+		"-j", "ACCEPT"); err != nil {
+		return err
+	} else if len(output) != 0 {
+		return fmt.Errorf("Error toggle iptables forward: %s", output)
+	}
+
+	if output, err := Raw(string(action), c.Name,
+		"-i", c.Bridge, "-o", c.Bridge,
+		"-p", proto,
+		"-s", ip2.String(),
+		"--dport", strconv.Itoa(port),
+		"-d", ip1.String(),
+		"-j", "ACCEPT"); err != nil {
+		return err
+	} else if len(output) != 0 {
+		return fmt.Errorf("Error toggle iptables forward: %s", output)
+	}
+
+	return nil
+}
+
 func (c *Chain) Prerouting(action Action, args ...string) error {
 	a := append(nat, fmt.Sprint(action), "PREROUTING")
 	if len(args) > 0 {
