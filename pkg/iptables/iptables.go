@@ -39,7 +39,6 @@ func NewChain(name, bridge string) (*Chain, error) {
 	} else if len(output) != 0 {
 		return nil, fmt.Errorf("Error creating new iptables chain: %s", output)
 	}
-
 	chain := &Chain{
 		Name:   name,
 		Bridge: bridge,
@@ -62,16 +61,6 @@ func RemoveExistingChain(name string) error {
 }
 
 func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr string, dest_port int) error {
-	if ip.To4 != nil {
-		return c.forward4(action, ip, port, proto, dest_addr, dest_port)
-	} else {
-		return fmt.Errorf("Support for IPv6 addresses not yet implemented")
-	}
-}
-
-// Create forward rule for IPv4 address
-func (c *Chain) forward4(action Action, ip net.IP, port int, proto, dest_addr string, dest_port int) error {
-
 	daddr := ip.String()
 	if ip.IsUnspecified() {
 		// iptables interprets "0.0.0.0" as "0.0.0.0/32", whereas we
@@ -79,7 +68,6 @@ func (c *Chain) forward4(action Action, ip net.IP, port int, proto, dest_addr st
 		// value" by both iptables and ip6tables.
 		daddr = "0/0"
 	}
-
 	if output, err := Raw("-t", "nat", string(action), c.Name,
 		"-p", proto,
 		"-d", daddr,
@@ -190,7 +178,6 @@ func Raw(args ...string) ([]byte, error) {
 }
 
 func (c *Chain) createForwardChain() error {
-
 	// Add chain if doesn't exist
 	if _, err := Raw("-n", "-L", c.Name); err != nil {
 		output, err := Raw("-N", c.Name)
@@ -200,7 +187,6 @@ func (c *Chain) createForwardChain() error {
 			return fmt.Errorf("Error iptables forward: %s", output)
 		}
 	}
-
 	// Add linking rule if it doesn't exist
 	if !Exists("FORWARD",
 		"!", "-i", c.Bridge,
@@ -215,6 +201,5 @@ func (c *Chain) createForwardChain() error {
 			return fmt.Errorf("Error iptables forward: %s", output2)
 		}
 	}
-
 	return nil
 }
