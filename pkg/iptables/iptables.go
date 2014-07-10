@@ -222,11 +222,9 @@ func (c *Chain) createForwardChain() error {
 	}
 	// Add linking rule if it doesn't exist
 	if !Exists("FORWARD",
-		"!", "-i", c.Bridge,
 		"-o", c.Bridge,
 		"-j", c.Name) {
 		if output2, err := Raw(string(Insert), "FORWARD",
-			"!", "-i", c.Bridge,
 			"-o", c.Bridge,
 			"-j", c.Name); err != nil {
 			return err
