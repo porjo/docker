@@ -11,53 +11,95 @@ import (
 )
 
 type Action string
+type Table string
 
 const (
 	Append Action = "-A"
 	Delete Action = "-D"
 	Insert Action = "-I"
+	Nat    Table  = "nat"
+	Filter Table  = "filter"
 )
 
 var (
 	ErrIptablesNotFound = errors.New("Iptables not found")
-	nat                 = []string{"-t", "nat"}
 	supportsXlock       = false
 )
 
 type Chain struct {
 	Name   string
 	Bridge string
+	Table  Table
 }
 
 func init() {
 	supportsXlock = exec.Command("iptables", "--wait", "-L", "-n").Run() == nil
 }
 
-func NewChain(name, bridge string) (*Chain, error) {
-	if output, err := Raw("-t", "nat", "-N", name); err != nil {
-		return nil, err
-	} else if len(output) != 0 {
-		return nil, fmt.Errorf("Error creating new iptables chain: %s", output)
-	}
-	chain := &Chain{
+func NewChain(name, bridge string, table Table) (*Chain, error) {
+	c := &Chain{
 		Name:   name,
 		Bridge: bridge,
+		Table:  table,
 	}
 
-	if err := chain.Prerouting(Append, "-m", "addrtype", "--dst-type", "LOCAL"); err != nil {
-		return nil, fmt.Errorf("Failed to inject docker in PREROUTING chain: %s", err)
+	if string(c.Table) == "" {
+		c.Table = Filter
 	}
-	if err := chain.Output(Append, "-m", "addrtype", "--dst-type", "LOCAL", "!", "--dst", "127.0.0.0/8"); err != nil {
-		return nil, fmt.Errorf("Failed to inject docker in OUTPUT chain: %s", err)
+
+	// Add chain if it doesn't exist
+	if _, err := Raw("-t", string(c.Table), "-n", "-L", c.Name); err != nil {
+		if output, err := Raw("-t", string(c.Table), "-N", c.Name); err != nil {
+			return nil, err
+		} else if len(output) != 0 {
+			return nil, fmt.Errorf("Could not create %s/%s chain: %s", c.Table, c.Name, output)
+		}
 	}
-	return chain, nil
+
+	switch table {
+	case Nat:
+		preroute := []string{
+			"-m", "addrtype",
+			"--dst-type", "LOCAL"}
+		if !Exists(preroute...) {
+			if err := c.Prerouting(Append, preroute...); err != nil {
+				return nil, fmt.Errorf("Failed to inject docker in PREROUTING chain: %s", err)
+			}
+		}
+		output := []string{
+			"-m", "addrtype",
+			"--dst-type", "LOCAL",
+			"!", "--dst", "127.0.0.0/8"}
+		if !Exists(output...) {
+			if err := c.Output(Append, output...); err != nil {
+				return nil, fmt.Errorf("Failed to inject docker in OUTPUT chain: %s", err)
+			}
+		}
+	case Filter:
+		link := []string{"FORWARD",
+			"-o", c.Bridge,
+			"-j", c.Name}
+		if !Exists(link...) {
+			insert := append([]string{string(Insert)}, link...)
+			if output, err := Raw(insert...); err != nil {
+				return nil, err
+			} else if len(output) != 0 {
+				return nil, fmt.Errorf("Could not create linking rule to %s/%s: %s", c.Table, c.Name, output)
+			}
+		}
+	}
+	return c, nil
 }
 
-func RemoveExistingChain(name string) error {
-	chain := &Chain{
-		Name: name,
+func RemoveExistingChain(name string, table Table) error {
+	c := &Chain{
+		Name:  name,
+		Table: table,
 	}
-	return chain.Remove()
+	if string(c.Table) == "" {
+		c.Table = Filter
+	}
+	return c.Remove()
 }
 
 func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr string, dest_port int) error {
@@ -68,7 +110,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		// value" by both iptables and ip6tables.
 		daddr = "0/0"
 	}
-	if output, err := Raw("-t", "nat", string(action), c.Name,
+	if output, err := Raw("-t", string(Nat), string(action), c.Name,
 		"-p", proto,
 		"-d", daddr,
 		"--dport", strconv.Itoa(port),
@@ -80,13 +122,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 		return fmt.Errorf("Error iptables forward: %s", output)
 	}
 
-	if action != Delete {
-		if err := c.createForwardChain(); err != nil {
-			return err
-		}
-	}
-
-	if output, err := Raw(string(action), c.Name,
+	if output, err := Raw("-t", string(Filter), string(action), c.Name,
 		"!", "-i", c.Bridge,
 		"-o", c.Bridge,
 		"-p", proto,
@@ -102,12 +138,7 @@ func (c *Chain) Forward(action Action, ip net.IP, port int, proto, dest_addr str
 }
 
 func (c *Chain) Link(action Action, ip1, ip2 net.IP, port int, proto string) error {
-	if action != Delete {
-		if err := c.createForwardChain(); err != nil {
-			return err
-		}
-	}
-	if output, err := Raw(string(action), c.Name,
+	if output, err := Raw("-t", string(Filter), string(action), c.Name,
 		"-i", c.Bridge, "-o", c.Bridge,
 		"-p", proto,
 		"-s", ip1.String(),
@@ -116,10 +147,9 @@ func (c *Chain) Link(action Action, ip1, ip2 net.IP, port int, proto string) err
 		"-j", "ACCEPT"); err != nil {
 		return err
 	} else if len(output) != 0 {
-		return fmt.Errorf("Error toggle iptables forward: %s", output)
+		return fmt.Errorf("Error iptables forward: %s", output)
 	}
-
-	if output, err := Raw(string(action), c.Name,
+	if output, err := Raw("-t", string(Filter), string(action), c.Name,
 		"-i", c.Bridge, "-o", c.Bridge,
 		"-p", proto,
 		"-s", ip2.String(),
@@ -128,14 +158,13 @@ func (c *Chain) Link(action Action, ip1, ip2 net.IP, port int, proto string) err
 		"-j", "ACCEPT"); err != nil {
 		return err
 	} else if len(output) != 0 {
-		return fmt.Errorf("Error toggle iptables forward: %s", output)
+		return fmt.Errorf("Error iptables forward: %s", output)
 	}
-
 	return nil
 }
 
 func (c *Chain) Prerouting(action Action, args ...string) error {
-	a := append(nat, fmt.Sprint(action), "PREROUTING")
+	a := []string{"-t", string(Nat), string(action), "PREROUTING"}
 	if len(args) > 0 {
 		a = append(a, args...)
 	}
@@ -148,7 +177,7 @@ func (c *Chain) Prerouting(action Action, args ...string) error {
 }
 
 func (c *Chain) Output(action Action, args ...string) error {
-	a := append(nat, fmt.Sprint(action), "OUTPUT")
+	a := append([]string{"-t", string(c.Table)}, fmt.Sprint(action), "OUTPUT")
 	if len(args) > 0 {
 		a = append(a, args...)
 	}
@@ -161,21 +190,22 @@ func (c *Chain) Output(action Action, args ...string) error {
 }
 
 func (c *Chain) Remove() error {
-	// Ignore errors - This could mean the chains were never set up
-	c.Prerouting(Delete, "-m", "addrtype", "--dst-type", "LOCAL")
-	c.Output(Delete, "-m", "addrtype", "--dst-type", "LOCAL", "!", "--dst", "127.0.0.0/8")
-	c.Output(Delete, "-m", "addrtype", "--dst-type", "LOCAL") // Created in versions <= 0.1.6
+	if c.Table == Nat {
+		// Ignore errors - This could mean the chains were never set up
+		c.Prerouting(Delete, "-m", "addrtype", "--dst-type", "LOCAL")
+		c.Output(Delete, "-m", "addrtype", "--dst-type", "LOCAL", "!", "--dst", "127.0.0.0/8")
+		c.Output(Delete, "-m", "addrtype", "--dst-type", "LOCAL") // Created in versions <= 0.1.6
 
-	c.Prerouting(Delete)
-	c.Output(Delete)
+		c.Prerouting(Delete)
+		c.Output(Delete)
 
-	Raw("-t", "nat", "-F", c.Name)
-	Raw("-t", "nat", "-X", c.Name)
-
+		Raw("-t", string(Nat), "-F", c.Name)
+		Raw("-t", string(Nat), "-X", c.Name)
+	}
 	return nil
 }
 
-// Check if an existing rule exists
+// Check if a rule exists
 func Exists(args ...string) bool {
 	if _, err := Raw(append([]string{"-C"}, args...)...); err != nil {
 		return false
@@ -208,29 +238,4 @@ func Raw(args ...string) ([]byte, error) {
 	}
 
 	return output, err
-}
-
-func (c *Chain) createForwardChain() error {
-	// Add chain if doesn't exist
-	if _, err := Raw("-n", "-L", c.Name); err != nil {
-		output, err := Raw("-N", c.Name)
-		if err != nil {
-			return err
-		} else if len(output) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output)
-		}
-	}
-	// Add linking rule if it doesn't exist
-	if !Exists("FORWARD",
-		"-o", c.Bridge,
-		"-j", c.Name) {
-		if output2, err := Raw(string(Insert), "FORWARD",
-			"-o", c.Bridge,
-			"-j", c.Name); err != nil {
-			return err
-		} else if len(output2) != 0 {
-			return fmt.Errorf("Error iptables forward: %s", output2)
-		}
-	}
-	return nil
 }
