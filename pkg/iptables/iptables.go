@@ -177,7 +177,7 @@ func (c *Chain) Prerouting(action Action, args ...string) error {
 }
 
 func (c *Chain) Output(action Action, args ...string) error {
-	a := append([]string{"-t", string(c.Table)}, fmt.Sprint(action), "OUTPUT")
+	a := append([]string{"-t", string(c.Table)}, string(action), "OUTPUT")
 	if len(args) > 0 {
 		a = append(a, args...)
 	}
